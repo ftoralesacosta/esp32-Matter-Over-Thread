@@ -7,6 +7,66 @@ Future AI agents starting a new session MUST read this document before touching 
 because several earlier conclusions in this file were WRONG and have been corrected. Read
 the "Corrected Root Cause" section first.
 
+This document originated on the fan-controller `main` branch. Section -2 below is specific to
+the `feature/led-mosfet-control` branch's Waveshare ESP32-H2-Zero bring-up; everything else
+(Thread/mDNS architecture, config-drift footguns) applies to both branches since they share
+the same underlying Matter/Thread stack.
+
+---
+
+## -2. H2 board bring-up (feature/led-mosfet-control branch): hardware ECDSA verify hang blocks first-ever real H2 commissioning
+
+> [!IMPORTANT]
+> This looks superficially like Section -1's "pairing fails" bug (same project, same class of
+> complaint) but is a genuinely different bug: a hard hang in a crypto peripheral driver, not a
+> silent mDNS/SRP gap. Different symptom (task watchdog firing repeatedly vs. commissioner
+> idling silently), different root cause, different fix location (per-target
+> `sdkconfig.defaults.esp32h2`, not shared `app_main.cpp`/`app_driver.cpp` code). Don't assume
+> a "pairing fails on a new board" report is this same C6 mDNS bug without checking the log
+> first.
+
+### Symptom
+First-ever real commissioning attempt on a physical Waveshare ESP32-H2-Zero (this branch's LED
+controller firmware) hard-hung partway through PASE: FreeRTOS task watchdog fired repeatedly
+(IDLE task starved, no recovery) while the CHIP task was stuck inside
+`ecdsa_hal_verify_signature` - specifically spinning in `ecdsa_ll_get_state`/
+`ecdsa_ll_set_stage` (`hal/esp32h2/include/hal/ecdsa_ll.h`) and never returning - while
+processing the commissioner's `AddTrustedRootCertificate` command. Confirmed via
+`tmux capture-pane` showing multiple repeated watchdog dumps with identical stack traces and no
+progress.
+
+### Root cause
+`CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY` defaults to `y` for any chip with
+`SOC_ECDSA_SUPPORTED` (per this ESP-IDF version's `components/mbedtls/Kconfig`), which includes
+the H2. This routes ECDSA signature verification through the H2's hardware ECDSA peripheral.
+That hardware path appears to have a bug in this IDF version's driver - it never returns from
+the state-polling loop. This is not application code; the C6 build never exercises this path at
+all (`SOC_ECDSA_SUPPORTED` is H2-specific in this project's target set), which is why it never
+showed up before.
+
+### Fix
+Added to `sdkconfig.defaults.esp32h2`:
+```ini
+CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY=n
+```
+Falls back to mbedTLS's software ECDSA verification, bypassing the hardware peripheral
+entirely. ECDSA verification only happens during commissioning (trusted-root-cert and NOC
+checks), so the software-path performance cost is irrelevant to runtime operation.
+
+### Status: confirmed fixed
+After flashing the fix, the H2 device commissioned successfully end-to-end twice in the same
+session (two separate CASE sessions/fabrics - consistent with Apple Home pairing both the
+controlling phone and a Home Hub) - clean `AddTrustedRootCertificate successful`,
+`AddNOC`/`successfully created fabric`, Thread attach, SRP/mDNS advertising, and
+`GeneralCommissioning: Received CommissioningComplete` / `Fail-safe cleanly disarmed`, with no
+watchdog hangs. The identical firmware was later re-flashed to a **second, different physical
+H2 chip** (the first was damaged during MOSFET-module soldering) and confirmed to boot cleanly
+and open its commissioning window normally - the fix is in `sdkconfig.defaults.esp32h2`, not
+tied to any single chip's state.
+
+MOSFET signal polarity (does GPIO-high turn the LED on or off?) is still unverified against
+real hardware as of this writing - see the README's MOSFET wiring section.
+
 ---
 
 ## -1. 2026-07-18 session: commissioning never completes (mDNS/SRP root cause)

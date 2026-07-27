@@ -80,6 +80,14 @@ Response" after previously pairing, see the troubleshooting workflows in
 configuration drift (a stale committed `sdkconfig`) or Thread mDNS/SRP misconfiguration, not
 hardware.
 
+**H2 board note:** the first-ever real H2 commissioning attempt hard-hung during
+`AddTrustedRootCertificate` due to a hardware ECDSA-peripheral driver bug in this ESP-IDF
+version, not our code. Fixed by `CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY=n` in
+`sdkconfig.defaults.esp32h2` (falls back to mbedTLS software verification; commissioning-only
+cost, so no runtime performance impact). See `.agents/FINDINGS.md` for the full diagnosis.
+With that fix, H2 commissioning is confirmed working end-to-end (validated on two separate
+physical H2 chips).
+
 ## 4. Post-Commissioning Behavior
 
 * Brightness is controlled via the LevelControl cluster's `CurrentLevel` attribute (0-254),
