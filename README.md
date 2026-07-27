@@ -75,8 +75,14 @@ which shares the same underlying Matter/Thread stack) hard-hung during
 `AddTrustedRootCertificate` due to a hardware ECDSA-peripheral driver bug in this ESP-IDF
 version, not application code. Fixed by `CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY=n` in
 `sdkconfig.defaults.esp32h2` (falls back to mbedTLS software verification; commissioning-only
-cost, so no runtime performance impact). See `.agents/FINDINGS.md` Section -2 for the full
+cost, so no runtime performance impact). With that fix, H2 commissioning is confirmed working
+end-to-end on `main` itself, on real hardware. See `.agents/FINDINGS.md` Section -2 for the full
 diagnosis.
+
+The BLE commissioning window closes on its own after some minutes of inactivity
+(`Commissioning window closed` in the log). If you miss it, no need to erase-flash or rebuild -
+just reset the device (power cycle, or reattach `idf.py monitor`, which resets the board by
+default) to reopen it.
 
 ## 4. Post-Commissioning Behavior
 

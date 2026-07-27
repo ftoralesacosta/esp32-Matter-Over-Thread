@@ -47,7 +47,7 @@ Falls back to mbedTLS's software ECDSA verification, bypassing the hardware peri
 entirely. ECDSA verification only happens during commissioning, so the software-path
 performance cost is irrelevant to runtime operation.
 
-### Status: confirmed fixed (on `feature/led-mosfet-control`), ported to `main`
+### Status: confirmed fixed on both branches, including real hardware on `main`
 On the LED branch, with this fix applied, the H2 device commissioned successfully end-to-end
 twice in one session (two CASE sessions/fabrics), and the identical firmware was later
 re-flashed to a second, different physical H2 chip (the first was damaged during unrelated
@@ -55,6 +55,21 @@ soldering work) and confirmed to boot and open its commissioning window cleanly 
 `sdkconfig.defaults.esp32h2`, not tied to any single chip's state. This same fix, plus H2 pin
 conditionals for the fan/button/RF-switch-skip (see Section 1's H2 pin table), was then ported
 onto `main` so the fan controller itself builds and commissions on H2 hardware.
+
+**Validated on real H2 hardware on `main` itself, same day.** Built for `esp32h2`, erase-flashed,
+and commissioned successfully - `AddTrustedRootCertificate successful`, `AddNOC`/`successfully
+created fabric`, `CASE Session established`, `GeneralCommissioning: Received
+CommissioningComplete`, no watchdog hangs. As with the LED branch, this happened twice in the
+same session (two fabrics - phone + Home Hub). The fan driver initialized correctly
+(`app_driver: Fan speed updated to 50%`) on first boot. Consider H2 support on `main` fully
+closed, not just build-verified.
+
+**Operational note (not a bug):** the BLE commissioning window closes on its own after some
+minutes of inactivity (`app_main: Commissioning window closed` in the log) if you don't
+complete pairing in time. If you miss the window, you don't need to erase-flash or rebuild -
+just reset the device (power cycle, or reattach `idf.py monitor`, which toggles the RTS line
+and resets the board by default). A fresh boot with no fabric yet commissioned always reopens
+BLE advertising and the commissioning window automatically.
 
 ---
 
