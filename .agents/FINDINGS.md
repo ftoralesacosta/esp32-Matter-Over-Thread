@@ -9,6 +9,55 @@ the "Corrected Root Cause" section first.
 
 ---
 
+## -2. H2 board support (added on `main`): hardware ECDSA verify hang blocks first-ever real H2 commissioning
+
+> [!IMPORTANT]
+> This looks superficially like Section -1's "pairing fails" bug (same project, same class of
+> complaint) but is a genuinely different bug: a hard hang in a crypto peripheral driver, not a
+> silent mDNS/SRP gap. Different symptom (task watchdog firing repeatedly vs. commissioner
+> idling silently), different root cause, different fix location (per-target
+> `sdkconfig.defaults.esp32h2`, not shared app code). Don't assume a "pairing fails on a new
+> board" report is this same C6 mDNS bug without checking the log first.
+
+This bug was originally found and fixed on the `feature/led-mosfet-control` branch (a
+different device-type branch that shares the same underlying Matter/Thread stack), then the
+same fix was applied here when H2 pin support was added to `main`'s fan controller.
+
+### Symptom
+First-ever real commissioning attempt on a physical Waveshare ESP32-H2-Zero hard-hung partway
+through PASE: FreeRTOS task watchdog fired repeatedly (IDLE task starved, no recovery) while
+the CHIP task was stuck inside `ecdsa_hal_verify_signature` - specifically spinning in
+`ecdsa_ll_get_state`/`ecdsa_ll_set_stage` (`hal/esp32h2/include/hal/ecdsa_ll.h`) and never
+returning - while processing the commissioner's `AddTrustedRootCertificate` command.
+
+### Root cause
+`CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY` defaults to `y` for any chip with
+`SOC_ECDSA_SUPPORTED` (per this ESP-IDF version's `components/mbedtls/Kconfig`), which includes
+the H2. That routes ECDSA signature verification through the H2's hardware ECDSA peripheral,
+which appears to have a driver bug in this IDF version - it never returns from the
+state-polling loop. Not application code; the C6 build never exercises this path at all
+(`SOC_ECDSA_SUPPORTED` is H2-specific in this project's target set).
+
+### Fix
+Added to `sdkconfig.defaults.esp32h2`:
+```ini
+CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY=n
+```
+Falls back to mbedTLS's software ECDSA verification, bypassing the hardware peripheral
+entirely. ECDSA verification only happens during commissioning, so the software-path
+performance cost is irrelevant to runtime operation.
+
+### Status: confirmed fixed (on `feature/led-mosfet-control`), ported to `main`
+On the LED branch, with this fix applied, the H2 device commissioned successfully end-to-end
+twice in one session (two CASE sessions/fabrics), and the identical firmware was later
+re-flashed to a second, different physical H2 chip (the first was damaged during unrelated
+soldering work) and confirmed to boot and open its commissioning window cleanly - the fix is in
+`sdkconfig.defaults.esp32h2`, not tied to any single chip's state. This same fix, plus H2 pin
+conditionals for the fan/button/RF-switch-skip (see Section 1's H2 pin table), was then ported
+onto `main` so the fan controller itself builds and commissions on H2 hardware.
+
+---
+
 ## -1. 2026-07-18 session: commissioning never completes (mDNS/SRP root cause)
 
 > [!IMPORTANT]
@@ -210,6 +259,20 @@ shared software/config root cause above, not a per-board silicon defect.)
 ### PWM Fan Wiring (Noctua Standard)
 * **Control Pin**: Fan PWM wire (blue) to physical pin **D3** = **GPIO21** in software.
 * **LEDC**: low-speed mode, 10-bit duty (0-1023), **25 kHz** (Noctua spec).
+
+### Waveshare ESP32-H2-Zero Pin Map (added later, see Section -2)
+Selected via `idf.py set-target esp32h2`; same `main/app_driver.cpp` and `main/app_main.cpp`,
+gated with `#if CONFIG_IDF_TARGET_ESP32H2`.
+
+| Function | ESP32-H2 GPIO | Notes |
+| :--- | :---: | :--- |
+| **Noctua Fan PWM Output (LEDC)** | **GPIO12** | Plain, unshared GPIO on this board |
+| **IoT Button Input** (Active High) | **GPIO10** | External button - NOT the onboard BOOT button (GPIO9), which enters the bootloader if held low at power-on |
+| RF switch init | *(skipped)* | This board has a ceramic antenna with no RF-switch chip; `init_rf_switch()` is gated `#if CONFIG_OPENTHREAD_ENABLED && !CONFIG_IDF_TARGET_ESP32H2` |
+
+Avoid GPIO13/14 (32.768kHz crystal per Espressif's official DevKitM-1 guide, which this board
+is pin-compatible with) and GPIO23/24 (UART0 TX/RX - the serial console this project's whole
+flashing workflow depends on).
 
 ---
 

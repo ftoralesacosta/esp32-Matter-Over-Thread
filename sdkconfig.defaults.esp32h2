@@ -34,6 +34,32 @@ CONFIG_LWIP_IPV6_AUTOCONFIG=n
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
+# Waveshare ESP32-H2-Zero has 4MB flash. Same footgun as esp32c6: this was
+# only ever set in a stale committed sdkconfig, never in any defaults file,
+# so a clean build reverts to IDF's 2MB default and breaks the partition
+# table (partitions.csv sizes to ~3.9MB). See sdkconfig.defaults.esp32c6 for
+# the original diagnosis.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# CHIP's crypto layer calls mbedtls_hkdf directly; mbedtls only builds it in
+# if HKDF_C is enabled. Same story as flash size above - missing here would
+# break the final link step with "undefined reference to `mbedtls_hkdf'".
+CONFIG_MBEDTLS_HKDF_C=y
+
+# CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY defaults to y on any chip with
+# SOC_ECDSA_SUPPORTED, which includes the H2. During the first-ever real H2
+# commissioning attempt (on the feature/led-mosfet-control branch), the
+# device hard-hung (task watchdog, IDLE task starved) inside
+# ecdsa_hal_verify_signature while verifying the trusted root certificate
+# (AddTrustedRootCertificate) - stuck in ecdsa_ll_get_state/ecdsa_ll_set_stage
+# and never returning. This looks like a bug in this ESP-IDF version's H2
+# ECDSA hardware-peripheral driver, not anything in our own code. Falling
+# back to mbedTLS's software ECDSA verification avoids the hardware path
+# entirely; verification only happens during commissioning, so the
+# performance cost doesn't matter. See .agents/FINDINGS.md Section -2 for
+# the full diagnosis.
+CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY=n
+
 # LwIP config for OpenThread
 CONFIG_LWIP_IPV6_NUM_ADDRESSES=8
 CONFIG_LWIP_MULTICAST_PING=y
