@@ -9,6 +9,57 @@ the "Corrected Root Cause" section first.
 
 ---
 
+## -3. `feature/fan_with_dial` branch: rotary encoder for local speed control
+
+Adds a rotary encoder ("dial") on top of `main`'s fan controller, for local physical speed
+adjustment alongside HomeKit control. Not yet flashed/tested on real hardware as of this
+writing - build-verified only.
+
+### Design decision: rotary encoder, not a potentiometer
+The user's requirement was that HomeKit must keep showing the fan's speed accurately no matter
+which input (HomeKit or the dial) last changed it. A potentiometer is unsuitable for this: it
+reports an absolute physical position, so if HomeKit sets speed to 80% while the pot is
+physically sitting at 20%, the two immediately disagree, and the next tiny nudge of the pot
+silently overwrites HomeKit's value with whatever the pot happens to be pointing at - there is
+no way to reconcile "physical knob position" against "last commanded value" without either
+fighting the user's expectations or adding a fragile deadband/hysteresis hack.
+
+A rotary encoder reports *relative* motion (`KNOB_LEFT`/`KNOB_RIGHT` per detent) with no fixed
+physical position at all. This sidesteps the problem entirely: every turn adjusts whatever the
+*current* PercentSetting is, regardless of whether that value was last set by HomeKit or a
+previous turn of the dial. There is exactly one source of truth (the Matter attribute), and the
+dial only ever nudges it - it never drives the LEDC PWM output directly.
+
+### Implementation
+* Uses [`espressif/knob`](https://components.espressif.com/components/espressif/knob)
+  (`iot_knob.h`), the same component family as the `espressif/button` dependency this project
+  already uses for the toggle button. It does software quadrature decoding from a background
+  timer/task (not a raw external GPIO ISR), which is why it's safe to call
+  `attribute::update()` directly from its callback - same pattern as the existing
+  `app_driver_button_toggle_cb`.
+* `app_driver_knob_adjust()` reads the *live* `PercentSetting` value via `attribute::get_val()`
+  each time (not a locally cached "last known speed" variable) before computing the new value.
+  This matters: a cached variable would only be correct once a HomeKit-originated write had
+  happened at least once since boot, and would otherwise let the very first encoder turn jump
+  from a stale/zero baseline instead of the fan's actual current speed.
+* Because encoder writes go through `app_driver_attribute_update()` exactly like a HomeKit
+  write does, rapid encoder turns coalesce through the *existing* 300ms debounce timer the same
+  way rapid HomeKit slider drags already do - no new debounce logic was needed.
+* The encoder module's integrated push-button (most EC11-style modules have one) reuses the
+  existing toggle-button GPIO and `app_driver_button_toggle_cb` logic for on/off, rather than
+  adding a second physical button to the BOM.
+
+### Pin caveats
+* C6 (XIAO): encoder A/B on GPIO22/GPIO23 (`D4`/`D5`) - unused pins per the Section 1 pin
+  table, not yet verified against real hardware on this branch.
+* H2 (Waveshare H2-Zero): encoder A/B on GPIO22/GPIO4. GPIO22 was already validated as a plain,
+  unshared pin on this board (`feature/tachometer-and-ota`'s tach signal uses it). GPIO4 is a
+  new pick by the same reasoning used for every other H2 pin choice in this project (avoid
+  GPIO9 BOOT strap, GPIO13/14 crystal, GPIO23/24 UART0) but has not been confirmed against a
+  real board yet - verify against the silkscreen before wiring.
+
+---
+
 ## -2. H2 board support (added on `main`): hardware ECDSA verify hang blocks first-ever real H2 commissioning
 
 > [!IMPORTANT]

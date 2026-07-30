@@ -20,6 +20,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <iot_button.h>
+#include <iot_knob.h>
 
 using namespace chip::app::Clusters;
 using namespace esp_matter;
@@ -41,6 +42,22 @@ extern uint16_t fan_endpoint_id;
 #define PWM_LEDC_MODE           LEDC_LOW_SPEED_MODE
 #define PWM_LEDC_RESOLUTION     LEDC_TIMER_10_BIT // 10-bit resolution (0 to 1023)
 #define PWM_LEDC_FREQ           25000             // 25 kHz PWM frequency for Noctua fan
+
+#if CONFIG_IDF_TARGET_ESP32H2
+// Waveshare ESP32-H2-Zero: GPIO22 was already validated as a plain, unshared
+// GPIO on this board (see feature/tachometer-and-ota). GPIO4 is picked as a
+// second unshared pin by the same reasoning (avoiding GPIO9 BOOT, GPIO13/14
+// 32.768kHz crystal, GPIO23/24 UART0) but this specific pair has NOT been
+// verified against real hardware yet - double check against your board's
+// silkscreen before wiring.
+#define ENCODER_GPIO_A          GPIO_NUM_22
+#define ENCODER_GPIO_B          GPIO_NUM_4
+#else
+#define ENCODER_GPIO_A          GPIO_NUM_22       // Physical pin D4 on Seeed Studio XIAO ESP32-C6
+#define ENCODER_GPIO_B          GPIO_NUM_23       // Physical pin D5 on Seeed Studio XIAO ESP32-C6
+#endif
+// Percentage change applied to PercentSetting per encoder detent.
+#define ENCODER_STEP_PERCENT    5
 
 static uint8_t current_speed_percentage = 0;
 
@@ -100,6 +117,54 @@ static void app_driver_button_toggle_cb(void *arg, void *data)
     attribute::update(endpoint_id, cluster_id, attribute_id, &val);
 
     chip::DeviceLayer::PlatformMgr().UnlockChipStack();
+}
+
+// Adjusts PercentSetting by delta (positive or negative), clamped to
+// [0, 100]. Routed through the same attribute the Home app writes to, so the
+// encoder and HomeKit are always adjusting one shared source of truth - the
+// dial never drives the fan directly, which is what keeps HomeKit's
+// displayed speed accurate regardless of who last touched it.
+static void app_driver_knob_adjust(int8_t delta)
+{
+    uint16_t endpoint_id = fan_endpoint_id;
+    uint32_t cluster_id = FanControl::Id;
+    uint32_t attribute_id = FanControl::Attributes::PercentSetting::Id;
+
+    chip::DeviceLayer::PlatformMgr().LockChipStack();
+
+    attribute_t *attribute = attribute::get(endpoint_id, cluster_id, attribute_id);
+    if (!attribute) {
+        ESP_LOGE(TAG, "Failed to get PercentSetting attribute");
+        chip::DeviceLayer::PlatformMgr().UnlockChipStack();
+        return;
+    }
+
+    esp_matter_attr_val_t val = esp_matter_invalid(NULL);
+    attribute::get_val(attribute, &val);
+
+    int new_speed = (int)val.val.u8 + delta;
+    if (new_speed < 0) {
+        new_speed = 0;
+    } else if (new_speed > 100) {
+        new_speed = 100;
+    }
+    val.val.u8 = (uint8_t)new_speed;
+
+    attribute::update(endpoint_id, cluster_id, attribute_id, &val);
+
+    chip::DeviceLayer::PlatformMgr().UnlockChipStack();
+
+    ESP_LOGI(TAG, "Encoder adjusted PercentSetting to %d%%", new_speed);
+}
+
+static void app_driver_knob_left_cb(void *arg, void *data)
+{
+    app_driver_knob_adjust(-ENCODER_STEP_PERCENT);
+}
+
+static void app_driver_knob_right_cb(void *arg, void *data)
+{
+    app_driver_knob_adjust(ENCODER_STEP_PERCENT);
 }
 
 static esp_timer_handle_t debounce_timer = NULL;
@@ -300,6 +365,37 @@ app_driver_handle_t app_driver_button_init()
         ESP_LOGE(TAG, "Failed to register button callback");
         return NULL;
     }
+
+    return (app_driver_handle_t)handle;
+}
+
+app_driver_handle_t app_driver_encoder_init()
+{
+    // Software quadrature decoding (iot_knob) rather than hardware PCNT -
+    // portable across targets without needing per-chip PCNT setup, and this
+    // fan's control loop only needs to react on the order of tens of ms.
+    knob_config_t cfg = {
+        .default_direction = 0,
+        .gpio_encoder_a = ENCODER_GPIO_A,
+        .gpio_encoder_b = ENCODER_GPIO_B,
+        .enable_power_save = false,
+    };
+
+    knob_handle_t handle = iot_knob_create(&cfg);
+    if (!handle) {
+        ESP_LOGE(TAG, "Failed to create knob device");
+        return NULL;
+    }
+
+    esp_err_t err = iot_knob_register_cb(handle, KNOB_LEFT, app_driver_knob_left_cb, NULL);
+    err |= iot_knob_register_cb(handle, KNOB_RIGHT, app_driver_knob_right_cb, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register knob callbacks");
+        return NULL;
+    }
+
+    ESP_LOGI(TAG, "Rotary encoder initialized on GPIO %d/%d, %d%% per detent",
+             ENCODER_GPIO_A, ENCODER_GPIO_B, ENCODER_STEP_PERCENT);
 
     return (app_driver_handle_t)handle;
 }

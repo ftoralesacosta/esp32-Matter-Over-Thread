@@ -38,6 +38,17 @@ app_driver_handle_t app_driver_fan_init();
  */
 app_driver_handle_t app_driver_button_init();
 
+/** Initialize the rotary encoder (dial) driver
+ *
+ * Adjusts the fan's PercentSetting attribute by a fixed step per detent,
+ * relative to whatever the current value is - never drives the fan
+ * directly, so HomeKit's displayed speed always stays the source of truth.
+ *
+ * @return Handle on success.
+ * @return NULL in case of failure.
+ */
+app_driver_handle_t app_driver_encoder_init();
+
 /** Driver Update
  *
  * This API should be called to update the driver for the attribute being updated.
