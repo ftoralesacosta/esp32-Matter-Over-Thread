@@ -162,7 +162,9 @@ extern "C" void app_main()
     /* Initialize driver */
     app_driver_handle_t fan_handle = app_driver_fan_init();
     app_driver_handle_t button_handle = app_driver_button_init();
+#if CONFIG_ENABLE_ROTARY_ENCODER
     app_driver_encoder_init();
+#endif
     app_reset_button_register(button_handle);
 
     /* Create a Matter node and add the mandatory Root Node device type on endpoint 0 */

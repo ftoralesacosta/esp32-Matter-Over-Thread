@@ -43,6 +43,7 @@ extern uint16_t fan_endpoint_id;
 #define PWM_LEDC_RESOLUTION     LEDC_TIMER_10_BIT // 10-bit resolution (0 to 1023)
 #define PWM_LEDC_FREQ           25000             // 25 kHz PWM frequency for Noctua fan
 
+#if CONFIG_ENABLE_ROTARY_ENCODER
 #if CONFIG_IDF_TARGET_ESP32H2
 // Waveshare ESP32-H2-Zero: GPIO22 was already validated as a plain, unshared
 // GPIO on this board (see feature/tachometer-and-ota). GPIO4 is picked as a
@@ -58,6 +59,7 @@ extern uint16_t fan_endpoint_id;
 #endif
 // Percentage change applied to PercentSetting per encoder detent.
 #define ENCODER_STEP_PERCENT    5
+#endif // CONFIG_ENABLE_ROTARY_ENCODER
 
 static uint8_t current_speed_percentage = 0;
 
@@ -119,6 +121,7 @@ static void app_driver_button_toggle_cb(void *arg, void *data)
     chip::DeviceLayer::PlatformMgr().UnlockChipStack();
 }
 
+#if CONFIG_ENABLE_ROTARY_ENCODER
 // Adjusts PercentSetting by delta (positive or negative), clamped to
 // [0, 100]. Routed through the same attribute the Home app writes to, so the
 // encoder and HomeKit are always adjusting one shared source of truth - the
@@ -166,6 +169,7 @@ static void app_driver_knob_right_cb(void *arg, void *data)
 {
     app_driver_knob_adjust(ENCODER_STEP_PERCENT);
 }
+#endif // CONFIG_ENABLE_ROTARY_ENCODER
 
 static esp_timer_handle_t debounce_timer = NULL;
 static uint8_t target_speed = 0;
@@ -352,13 +356,17 @@ app_driver_handle_t app_driver_button_init()
 #else
     config.gpio_button_config.gpio_num = GPIO_NUM_2; // Changed back to GPIO 2 for consistency with original repo
 #endif
-    // Active low: this pin now reads the rotary encoder module's integrated
+#if CONFIG_ENABLE_ROTARY_ENCODER
+    // Active low: this pin reads the rotary encoder module's integrated
     // push-switch, not a standalone tactile button. Encoder switches are a
     // simple momentary contact between the sense pin and the encoder's
     // common/GND pin (same reference the A/B quadrature channels use) - the
     // iot_button component auto-enables an internal pull-up for
     // active_level=0, so no external resistor is needed.
     config.gpio_button_config.active_level = 0;
+#else
+    config.gpio_button_config.active_level = 1;      // Active high (1) - standalone tactile button
+#endif
 
     button_handle_t handle = iot_button_create(&config);
     if (!handle) {
@@ -375,6 +383,7 @@ app_driver_handle_t app_driver_button_init()
     return (app_driver_handle_t)handle;
 }
 
+#if CONFIG_ENABLE_ROTARY_ENCODER
 app_driver_handle_t app_driver_encoder_init()
 {
     // Software quadrature decoding (iot_knob) rather than hardware PCNT -
@@ -405,3 +414,4 @@ app_driver_handle_t app_driver_encoder_init()
 
     return (app_driver_handle_t)handle;
 }
+#endif // CONFIG_ENABLE_ROTARY_ENCODER

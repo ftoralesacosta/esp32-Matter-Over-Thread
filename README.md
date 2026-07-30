@@ -97,6 +97,19 @@ detent turning or the switch being pressed.
 
 See `.agents/FINDINGS.md` for the full pin table and wiring notes.
 
+### Enabling/disabling the dial (`CONFIG_ENABLE_ROTARY_ENCODER`)
+
+Encoder support is gated behind a Kconfig option (`main/Kconfig.projbuild`), off by default
+everywhere except this branch's own `sdkconfig.defaults.*`, which turn it on. This is a
+**build-time** choice, not a runtime one - flipping it requires a rebuild/reflash, not just a
+setting change on a running device.
+
+* To disable it on this branch (e.g. testing without the encoder wired up):
+  `idf.py menuconfig` -> Fan Controller Configuration -> uncheck "Enable rotary encoder dial
+  support", or edit `sdkconfig` directly.
+* Safe either way: with the option enabled but no encoder physically connected, the A/B and
+  switch pins simply idle via internal pull-ups - no spurious fan-speed changes.
+
 ## 1. Environment Setup
 
 Requires ESP-IDF and ESP-Matter set up per the

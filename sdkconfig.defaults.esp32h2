@@ -79,6 +79,12 @@ CONFIG_ENABLE_WIFI_AP=n
 CONFIG_BUTTON_PERIOD_TIME_MS=20
 CONFIG_BUTTON_LONG_PRESS_TIME_MS=5000
 
+# This branch (feature/fan_with_dial) exists to build and test rotary
+# encoder support, so it defaults to enabled here. The Kconfig option itself
+# defaults to n (see main/Kconfig.projbuild), so a build on main or any
+# other branch without this line stays dial-free.
+CONFIG_ENABLE_ROTARY_ENCODER=y
+
 # Enable chip shell
 CONFIG_ENABLE_CHIP_SHELL=y
 

@@ -30,3 +30,25 @@ menu "Example Configuration"
             Fixed salt in custom dynamic passcode commissionable data provider. It should be a Base64-Encoded string.
 
 endmenu
+
+menu "Fan Controller Configuration"
+
+    config ENABLE_ROTARY_ENCODER
+        bool "Enable rotary encoder dial support"
+        default n
+        help
+            Enable if a rotary encoder module is physically wired to the
+            board for local fan speed control (see README for wiring).
+            Each detent adjusts the FanControl PercentSetting attribute
+            through the same code path a HomeKit write uses, so the dial
+            and HomeKit always agree on the current speed.
+
+            Disabled by default: this reserves the encoder A/B GPIOs as
+            inputs when enabled, so leave it off until you have the
+            hardware wired up. Adds about 6KB to the compiled binary when
+            enabled; negligible RAM/CPU otherwise. Safe to leave enabled
+            with no encoder physically connected - the pins simply idle via
+            internal pull-ups - but there is no reason to if you are not
+            using one.
+
+endmenu

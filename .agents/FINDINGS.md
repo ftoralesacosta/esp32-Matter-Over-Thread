@@ -58,6 +58,21 @@ dial only ever nudges it - it never drives the LEDC PWM output directly.
   GPIO9 BOOT strap, GPIO13/14 crystal, GPIO23/24 UART0) but has not been confirmed against a
   real board yet - verify against the silkscreen before wiring.
 
+### Gated behind `CONFIG_ENABLE_ROTARY_ENCODER` (Kconfig, `main/Kconfig.projbuild`)
+Off by default; this branch's `sdkconfig.defaults.*` turn it on so builds here include the
+dial without extra menuconfig steps. All encoder-specific code (pin defines, the knob
+callbacks, `app_driver_encoder_init()` and its declaration/call site) is wrapped in
+`#if CONFIG_ENABLE_ROTARY_ENCODER`; the button's `active_level` also flips between 0 (encoder
+switch, active-low) and 1 (standalone tactile button, active-high, matching `main`'s original
+wiring) depending on the same option. This is a build-time toggle, not runtime - flipping it
+needs a rebuild/reflash. Intent: once validated on real hardware, this can be merged into
+`main` with the option defaulting off, so existing deployments without an encoder wired up are
+unaffected.
+
+Real-world validation status: **build-verified only as of this addition** (both C6 and H2
+compiled cleanly before this Kconfig refactor; not yet re-verified after it, and not yet
+tested against a physical encoder).
+
 ---
 
 ## -2. H2 board support (added on `main`): hardware ECDSA verify hang blocks first-ever real H2 commissioning

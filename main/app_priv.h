@@ -38,6 +38,7 @@ app_driver_handle_t app_driver_fan_init();
  */
 app_driver_handle_t app_driver_button_init();
 
+#if CONFIG_ENABLE_ROTARY_ENCODER
 /** Initialize the rotary encoder (dial) driver
  *
  * Adjusts the fan's PercentSetting attribute by a fixed step per detent,
@@ -48,6 +49,7 @@ app_driver_handle_t app_driver_button_init();
  * @return NULL in case of failure.
  */
 app_driver_handle_t app_driver_encoder_init();
+#endif // CONFIG_ENABLE_ROTARY_ENCODER
 
 /** Driver Update
  *
