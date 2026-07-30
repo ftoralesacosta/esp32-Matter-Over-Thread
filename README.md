@@ -33,7 +33,7 @@ Two supported boards, selected via `idf.py set-target`:
 
 ### Seeed Studio XIAO ESP32-C6
 * **Fan PWM output:** physical pin `D3` / GPIO21 (LEDC, low-speed mode, 10-bit duty, 25 kHz)
-* **Toggle button:** physical pin `D2` / GPIO2 (active high) - reuse the encoder module's
+* **Toggle button:** physical pin `D2` / GPIO2 (active low) - reuse the encoder module's
   integrated push-button here rather than a separate standalone tactile button
 * **Encoder A/B:** physical pins `D4` / GPIO22 and `D5` / GPIO23
 * **Onboard RF switch:** GPIO3 (enable, drive LOW) + GPIO14 (antenna select, LOW = ceramic) -
@@ -58,7 +58,42 @@ A standard EC11-style encoder module (CLK/DT quadrature outputs + integrated SW 
 wired to the A/B pins above, using the [`espressif/knob`](https://components.espressif.com/components/espressif/knob)
 component for software quadrature decoding - portable across targets without needing per-chip
 hardware PCNT setup. The module's own push-button reuses the existing toggle-button GPIO/logic
-(on/off), so no separate standalone button is needed in the BOM.
+(on/off), so no separate standalone button is needed in the BOM. Confirmed compatible with any
+standard mechanical incremental quadrature encoder, e.g. an Alps Alpine 15-pulse or a Bourns
+24-pulse part - pulse count only changes how many detents make up one full rotation, not
+electrical compatibility. If you want one full turn to roughly span the whole 0-100% range,
+tune `ENCODER_STEP_PERCENT` in `main/app_driver.cpp` against your part's pulse count (e.g.
+~7%/detent for 15 PPR, ~4%/detent for 24 PPR).
+
+Not every part in these encoder families includes the integrated push-switch - check your
+specific datasheet for a 5-pin layout (A/B + common + 2 switch terminals) vs. a 3-pin layout
+(A/B + common only, no switch). If yours has no switch, wire a separate standalone momentary
+button to the same GPIO instead (same active-low wiring: one leg to GND, one leg to the pin).
+
+#### Wiring - Waveshare ESP32-H2-Zero
+
+| Encoder pin | Connects to |
+| :--- | :--- |
+| Common / GND | GND |
+| A (often labeled CLK) | GPIO22 |
+| B (often labeled DT) | GPIO4 |
+| Switch terminal 1 | GPIO10 |
+| Switch terminal 2 | GND (same common as above, or a separate switch-common pin if your part has one) |
+
+#### Wiring - Seeed Studio XIAO ESP32-C6
+
+| Encoder pin | Connects to |
+| :--- | :--- |
+| Common / GND | GND |
+| A (often labeled CLK) | GPIO22 (`D4`) |
+| B (often labeled DT) | GPIO23 (`D5`) |
+| Switch terminal 1 | GPIO2 (`D2`) |
+| Switch terminal 2 | GND (same common as above, or a separate switch-common pin if your part has one) |
+
+No external pull-up or pull-down resistors are needed on any of these pins - the firmware
+enables the ESP32's internal pull-ups on all of them (A, B, and the switch), so each pin idles
+HIGH and gets pulled to GND when the encoder's internal contacts close, whether that's a
+detent turning or the switch being pressed.
 
 See `.agents/FINDINGS.md` for the full pin table and wiring notes.
 
