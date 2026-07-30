@@ -352,7 +352,13 @@ app_driver_handle_t app_driver_button_init()
 #else
     config.gpio_button_config.gpio_num = GPIO_NUM_2; // Changed back to GPIO 2 for consistency with original repo
 #endif
-    config.gpio_button_config.active_level = 1;      // Active high (1)
+    // Active low: this pin now reads the rotary encoder module's integrated
+    // push-switch, not a standalone tactile button. Encoder switches are a
+    // simple momentary contact between the sense pin and the encoder's
+    // common/GND pin (same reference the A/B quadrature channels use) - the
+    // iot_button component auto-enables an internal pull-up for
+    // active_level=0, so no external resistor is needed.
+    config.gpio_button_config.active_level = 0;
 
     button_handle_t handle = iot_button_create(&config);
     if (!handle) {
